@@ -1,0 +1,17 @@
+# Core deep learning framework.
+# Install the build matching your CUDA version per https://pytorch.org/get-started/locally/
+# if the default PyPI wheel doesn't pick up your GPU correctly.
+torch>=2.0.0
+
+# Frozen GPT-2 backbone (downloaded from Hugging Face at runtime).
+transformers>=4.30.0
+
+# Data loading and results handling.
+pandas>=1.5.0
+numpy>=1.23.0
+
+# StandardScaler (utils/data_loader.py) and evaluation metrics (utils/metrics.py).
+scikit-learn>=1.2.0
+
+# Result plotting (utils/tools.py: visual()).
+matplotlib>=3.6.0
