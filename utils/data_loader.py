@@ -17,7 +17,7 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, Dataset
 
-from utils.timefeatures import time_features
+from utils.time_features import time_features
 
 
 class ElectricityDataset(Dataset):
