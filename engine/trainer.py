@@ -55,13 +55,13 @@ class Trainer:
         self.args = configs
         self.device = configs.device
 
-        # enc_in / c_out are measured off the real training data rather
-        # than hand-typed, so they can never drift from the actual CSV.
-        # The loaded train set is cached and reused when train() runs, so
-        # the data is never read from disk twice.
+        # num_input_channels / num_target_channels are measured off the real
+        # training data rather than hand-typed, so they can never drift from
+        # the actual CSV. The loaded train set is cached and reused when
+        # train() runs, so the data is never read from disk twice.
         self._train_data, self._train_loader = get_dataloader(configs, 'train')
-        configs.enc_in = self._train_data.enc_in
-        configs.c_out = len(configs.target_columns)
+        configs.num_input_channels = self._train_data.num_input_channels
+        configs.num_target_channels = len(configs.target_columns)
 
         self.model = Model(configs).float().to(self.device)
 
@@ -89,7 +89,9 @@ class Trainer:
         self.model.eval()
         total_loss = []
         with torch.no_grad():
-            for batch_x, batch_y, _, batch_y_mark in vali_loader:
+            # dataset yields (seq_x, seq_y, seq_x_mark, seq_y_mark, seq_forecast) —
+            # seq_forecast currently unused, see data_loader.py note.
+            for batch_x, batch_y, _, batch_y_mark, _ in vali_loader:
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
                 batch_y_mark = batch_y_mark.float().to(self.device)
@@ -126,7 +128,7 @@ class Trainer:
             iter_count = 0
             train_loss = []
 
-            for i, (batch_x, batch_y, _, batch_y_mark) in enumerate(train_loader):
+            for i, (batch_x, batch_y, _, batch_y_mark, _) in enumerate(train_loader):
                 iter_count += 1
                 optimizer.zero_grad()
 
@@ -215,7 +217,7 @@ class Trainer:
         self.model.eval()
 
         with torch.no_grad():
-            for batch_x, batch_y, _, batch_y_mark in test_loader:
+            for batch_x, batch_y, _, batch_y_mark, _ in test_loader:
                 start = time.time()
                 batch_x = batch_x.float().to(self.device)
                 batch_y_mark = batch_y_mark.float().to(self.device)
