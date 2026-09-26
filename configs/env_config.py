@@ -15,8 +15,18 @@ random_seed = 4213
 use_gpu = True
 gpu_device_id = 0
 
-# ── Checkpointing ────────────────────────────────────────────────────────
+# ── Checkpointing (working directory used during training, per run) ──────
 checkpoint_dir = './results/'
+
+# ── Model weight caching ──────────────────────────────────────────────────
+# GPT-2 backbone weights are downloaded once into this folder and reused
+# on every subsequent run instead of being re-fetched.
+gpt2_weights_dir = './weights'
+
+# ── Saved-model output ────────────────────────────────────────────────────
+# Only written when the program is run with --save-model; otherwise this
+# folder is never touched.
+saved_models_dir = './models'
 
 # ── Training loop ─────────────────────────────────────────────────────────
 num_train_epochs = 20

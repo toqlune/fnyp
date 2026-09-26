@@ -48,6 +48,10 @@ prediction_length = 168           # 1-week forecast horizon (renamed from `pred_
 
 # ── Scaling ──────────────
 apply_scaling = True
+# NOTE: previously referenced in trainer.py as `self.args.inverse` but never
+# defined in any config file — this would have raised an AttributeError the
+# first time test() ran. Adding it here restores the intended behavior.
+apply_inverse_transform = True
 
 # ── Auxiliary forecast input width ────────────────
 # Pending confirmation from exp_forecasting.py — carried over from the
