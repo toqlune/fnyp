@@ -52,8 +52,3 @@ apply_scaling = True
 # defined in any config file — this would have raised an AttributeError the
 # first time test() ran. Adding it here restores the intended behavior.
 apply_inverse_transform = True
-
-# ── Auxiliary forecast input width ────────────────
-# Pending confirmation from exp_forecasting.py — carried over from the
-# original config, not yet verified as consumed downstream.
-auxiliary_forecast_dim = 1

@@ -37,10 +37,6 @@ class ElectricityDataset(Dataset):
         self.feature_columns = list(configs.feature_columns)
         self.apply_scaling = configs.apply_scaling
         self.time_frequency = configs.time_frequency
-        # NOTE: not currently consumed anywhere downstream — trainer.py's
-        # model call never passes this tensor in. Kept for now; candidate
-        # for removal once architecture/multiattllm.py is reviewed.
-        self.auxiliary_forecast_dim = configs.auxiliary_forecast_dim
         self.use_time_features_encoding = (configs.time_embedding_type == 'timeF')
         self.num_train_rows = configs.num_train_rows
         self.num_test_rows = configs.num_test_rows
@@ -60,8 +56,7 @@ class ElectricityDataset(Dataset):
         seq_y = self.data_y[r_begin:r_end]
         seq_x_mark = self.data_stamp[s_begin:s_end]
         seq_y_mark = self.data_stamp[r_begin:r_end]
-        seq_forecast = self.data_forecast[r_begin:r_end, :self.auxiliary_forecast_dim]
-        return seq_x, seq_y, seq_x_mark, seq_y_mark, seq_forecast
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
 
     def inverse_transform(self, data):
         """De-standardizes target-column predictions back to real units."""
@@ -112,7 +107,6 @@ class ElectricityDataset(Dataset):
             self.data_x = features[start:end, :len(self.feature_columns)]
             self.data_y = features[start:end, -n_targets:]
 
-        self.data_forecast = features[start:end, :self.auxiliary_forecast_dim]
         self.data_stamp = self._encode_time(df_eval['date'][start:end])
 
         # Measured off the real data — always correct even if feature_columns

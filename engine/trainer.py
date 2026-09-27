@@ -89,9 +89,7 @@ class Trainer:
         self.model.eval()
         total_loss = []
         with torch.no_grad():
-            # dataset yields (seq_x, seq_y, seq_x_mark, seq_y_mark, seq_forecast) —
-            # seq_forecast currently unused, see data_loader.py note.
-            for batch_x, batch_y, _, batch_y_mark, _ in vali_loader:
+            for batch_x, batch_y, _, batch_y_mark in vali_loader:
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
                 batch_y_mark = batch_y_mark.float().to(self.device)
@@ -128,7 +126,7 @@ class Trainer:
             iter_count = 0
             train_loss = []
 
-            for i, (batch_x, batch_y, _, batch_y_mark, _) in enumerate(train_loader):
+            for i, (batch_x, batch_y, _, batch_y_mark) in enumerate(train_loader):
                 iter_count += 1
                 optimizer.zero_grad()
 
@@ -217,7 +215,7 @@ class Trainer:
         self.model.eval()
 
         with torch.no_grad():
-            for batch_x, batch_y, _, batch_y_mark, _ in test_loader:
+            for batch_x, batch_y, _, batch_y_mark in test_loader:
                 start = time.time()
                 batch_x = batch_x.float().to(self.device)
                 batch_y_mark = batch_y_mark.float().to(self.device)

@@ -2,11 +2,11 @@
 Embedding building blocks used by the fusion decoder (DataEmbedding) and
 the LLM encoder (PatchEmbedding).
 
-configs.embed is 'timeF' everywhere in this pipeline, so DataEmbedding only
-needs the continuous TimeFeatureEmbedding branch, not the categorical
-TemporalEmbedding/FixedEmbedding lookup-table branch — those have been
-dropped. Add them back if you want to experiment with 'fixed'/'learned'
-time encodings.
+configs.time_embedding_type is 'timeF' everywhere in this pipeline, so
+DataEmbedding only needs the continuous TimeFeatureEmbedding branch, not
+the categorical TemporalEmbedding/FixedEmbedding lookup-table branch —
+those have been dropped. Add them back if you want to experiment with
+'fixed'/'learned' time encodings.
 """
 import math
 
@@ -49,7 +49,7 @@ class TokenEmbedding(nn.Module):
 
 
 class TimeFeatureEmbedding(nn.Module):
-    """Projects continuous calendar features (from utils.timefeatures) to
+    """Projects continuous calendar features (from utils.time_features) to
     d_model via a single linear layer."""
 
     FREQ_TO_DIM = {'h': 4, 't': 5, 's': 6, '15min': 5, 'm': 1, 'a': 1, 'w': 2, 'd': 3, 'b': 3}
@@ -107,11 +107,11 @@ class PatchEmbedding(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        # x: (batch, n_vars, seq_len)
-        n_vars = x.shape[1]
+        # x: (batch, num_channels, seq_len)
+        num_channels = x.shape[1]
         x = self.padding_layer(x)
         x = x.unfold(dimension=-1, size=self.patch_len, step=self.stride)
-        # x: (batch, n_vars, patch_num, patch_len)
+        # x: (batch, num_channels, patch_num, patch_len)
         x = torch.reshape(x, (x.shape[0] * x.shape[1], x.shape[2], x.shape[3]))
         x = self.value_embedding(x)
-        return self.dropout(x), n_vars
+        return self.dropout(x), num_channels

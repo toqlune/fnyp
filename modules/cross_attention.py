@@ -10,6 +10,12 @@ A GLU gate sits right after the multi-head attention output: it projects
 to twice the width, then GLU(dim=-1) splits that in half and computes
 a * sigmoid(b), letting the network learn to suppress noisy cross-attention
 output before it reaches the frozen LLM.
+
+NOTE: llm_block.py constructs this with d_keys=feedforward_dimension
+(rather than leaving it at the usual d_model // n_heads default), so the
+internal Q/K/V working width here is deliberately much wider than in
+modules/attention.py's AttentionLayer. Not a bug — just worth knowing the
+same parameter name means something different in each place.
 """
 from math import sqrt
 
@@ -40,23 +46,23 @@ class CrossAttentionLayer(nn.Module):
         # target_embedding: (batch, num_patches, d_model)  — time-series patches
         # source_embedding: (num_prototypes, d_llm)         — prototype keys
         # value_embedding:  (num_prototypes, d_llm)         — prototype values
-        B, T, _ = target_embedding.shape
-        S, _ = source_embedding.shape
-        H = self.n_heads
+        batch_size, num_patches, _ = target_embedding.shape
+        num_prototypes, _ = source_embedding.shape
+        num_heads = self.n_heads
 
-        target_embedding = self.query_projection(target_embedding).view(B, T, H, -1)
-        source_embedding = self.key_projection(source_embedding).view(S, H, -1)
-        value_embedding = self.value_projection(value_embedding).view(S, H, -1)
+        target_embedding = self.query_projection(target_embedding).view(batch_size, num_patches, num_heads, -1)
+        source_embedding = self.key_projection(source_embedding).view(num_prototypes, num_heads, -1)
+        value_embedding = self.value_projection(value_embedding).view(num_prototypes, num_heads, -1)
 
         out = self._reprogram(target_embedding, source_embedding, value_embedding)
-        out = out.reshape(B, T, -1)
+        out = out.reshape(batch_size, num_patches, -1)
         out = self.glu(out)  # gated bottleneck before the frozen LLM sees it
         return self.out_projection(out)
 
     def _reprogram(self, target_embedding, source_embedding, value_embedding):
         # Equations (3) and (4) from the paper
-        _, _, _, E = target_embedding.shape
-        scale = 1. / sqrt(E)
+        _, _, _, head_dim = target_embedding.shape
+        scale = 1. / sqrt(head_dim)
 
         # how much each patch attends to each prototype
         scores = torch.einsum("blhe,she->bhls", target_embedding, source_embedding)
