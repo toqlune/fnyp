@@ -1,6 +1,14 @@
 """
 Fusion decoder (paper Component ⑤): a stack of self-attention +
 cross-attention decoder layers, each followed by a feed-forward block.
+
+NOTE: the improved-architecture diagram shows a "(M4) Adaptive Gated
+Fusion" step between the CI Decoder Layer and the final Add & Norm. This
+implementation does not include it — DecoderLayer below is a standard
+self-attention -> cross-attention -> feed-forward decoder layer, combining
+each sub-block with a plain residual add, not a learned/adaptive gate.
+Flagging this as a known gap versus the diagram rather than silently
+resolving it either way.
 """
 import torch.nn as nn
 import torch.nn.functional as F

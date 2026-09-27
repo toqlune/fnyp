@@ -9,10 +9,10 @@ import torch.nn as nn
 
 class FlattenHead(nn.Module):
 
-    def __init__(self, nf, target_window, head_dropout=0):
+    def __init__(self, flattened_input_dim, target_window, head_dropout=0):
         super().__init__()
         self.flatten = nn.Flatten(start_dim=-2)
-        self.linear = nn.Linear(nf, target_window)
+        self.linear = nn.Linear(flattened_input_dim, target_window)
         self.dropout = nn.Dropout(head_dropout)
 
     def forward(self, x):
