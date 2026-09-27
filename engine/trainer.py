@@ -23,9 +23,10 @@ from utils.tools import EarlyStopping, adjust_learning_rate, save_config, visual
 warnings.filterwarnings('ignore')
 
 # Config fields embedded in every generated run identifier (saved-model
-# filenames, results filenames, working checkpoint folder). Keep this short
-# and intentional — include only whatever actually varies between your
-# experiment runs, not every hyperparameter.
+# filenames, results filenames, working checkpoint folder, and the
+# TRAINING/TESTING console headers). Keep this short and intentional —
+# include only whatever actually varies between your experiment runs, not
+# every hyperparameter.
 RUN_ID_CONFIG_KEYS = ['num_text_prototypes']
 
 
@@ -108,7 +109,6 @@ class Trainer:
         os.makedirs(run_checkpoint_dir, exist_ok=True)
         save_config(self.args, os.path.join(run_checkpoint_dir, 'configs.pkl'))
 
-        train_steps = len(train_loader)
         early_stopping = EarlyStopping(patience=self.args.early_stopping_patience, verbose=True)
 
         optimizer = self._select_optimizer()
@@ -118,16 +118,14 @@ class Trainer:
 
         loss_records = {"epoch": [], "time": [], "train_loss": [], "vali_loss": []}
         run_start = time.time()
-        time_now = time.time()
+        epoch_durations = []
 
         for epoch in range(self.args.num_train_epochs):
             self.model.train()
             epoch_start = time.time()
-            iter_count = 0
             train_loss = []
 
-            for i, (batch_x, batch_y, _, batch_y_mark) in enumerate(train_loader):
-                iter_count += 1
+            for batch_x, batch_y, _, batch_y_mark in train_loader:
                 optimizer.zero_grad()
 
                 batch_x = batch_x.float().to(self.device)
@@ -144,15 +142,6 @@ class Trainer:
                     loss = criterion(outputs, target)
                 train_loss.append(loss.item())
 
-                verbose_interval = max(len(train_loader) // 5, 1)
-                if (i + 1) % verbose_interval == 0:
-                    print(f"\titers: {i + 1}, epoch: {epoch + 1} | loss: {loss.item():.7f}")
-                    speed = (time.time() - time_now) / iter_count
-                    left_time = speed * ((self.args.num_train_epochs - epoch) * train_steps - i)
-                    print(f"\tspeed: {speed:.4f}s/iter; left time: {left_time / 60:.2f}min")
-                    iter_count = 0
-                    time_now = time.time()
-
                 if self.args.use_mixed_precision:
                     scaler.scale(loss).backward()
                     scaler.step(optimizer)
@@ -167,38 +156,41 @@ class Trainer:
 
             train_loss = float(np.mean(train_loss))
             vali_loss = self.vali(vali_loader, criterion)
+            epoch_time_min = (time.time() - epoch_start) / 60
+            epoch_durations.append(epoch_time_min)
 
             loss_records["epoch"].append(epoch + 1)
             loss_records["time"].append(round((time.time() - run_start) / 60, 4))
             loss_records["train_loss"].append(train_loss)
             loss_records["vali_loss"].append(vali_loss)
 
-            print(f" Epoch: {epoch + 1} cost time: {round((time.time() - epoch_start) / 60, 2)} min")
-            print(f"Train Loss: {train_loss:.7f} Vali Loss: {vali_loss:.7f}")
+            if self.args.lr_schedule_type == 'COS':
+                scheduler.step()
+            elif self.args.lr_schedule_type != 'TST':
+                adjust_learning_rate(optimizer, scheduler, epoch + 1, self.args, printout=False)
+            current_lr = optimizer.param_groups[0]['lr']
+
+            avg_epoch_time = sum(epoch_durations) / len(epoch_durations)
+            remaining_epochs = self.args.num_train_epochs - (epoch + 1)
+            eta_min = remaining_epochs * avg_epoch_time
+
+            print(
+                f"Epoch {epoch + 1:>3}/{self.args.num_train_epochs:<3} \u2502 "
+                f"train_loss: {train_loss:.6f} \u2502 val_loss: {vali_loss:.6f} \u2502 "
+                f"lr: {current_lr:.2e} \u2502 time: {epoch_time_min:.1f}min \u2502 eta: {eta_min:.1f}min"
+            )
 
             early_stopping(vali_loss, self.model, run_checkpoint_dir)
             if early_stopping.early_stop:
-                print("Early stopping")
+                print(f"  \u21b3 Early stopping (no improvement for {self.args.early_stopping_patience} epochs)")
                 break
-
-            epoch_minutes = (time.time() - epoch_start) / 60
-            left_time = 1 + (self.args.early_stopping_patience - early_stopping.counter) * epoch_minutes
-            print(f"  Left time: {round(left_time, 2)} min")
-
-            if self.args.lr_schedule_type == 'COS':
-                scheduler.step()
-                print(f"lr = {optimizer.param_groups[0]['lr']:.10f}")
-            elif self.args.lr_schedule_type != 'TST':
-                adjust_learning_rate(optimizer, scheduler, epoch + 1, self.args, printout=True)
-            else:
-                print(f"Updating learning rate to {scheduler.get_last_lr()[0]}")
 
         self.model.load_state_dict(torch.load(os.path.join(run_checkpoint_dir, 'checkpoint')))
 
         run_dir = os.path.join(self.args.checkpoint_dir, run_id)
         loss_path = os.path.join(run_dir, "loss_records.csv")
         pd.DataFrame(loss_records).to_csv(loss_path, index=False)
-        print("Loss records saved to:", loss_path)
+        print(f"\nLoss records saved to: {loss_path}")
         return self.model
 
     def test(self, run_id, load_checkpoint=False):
@@ -226,7 +218,7 @@ class Trainer:
                 outputs = outputs.detach().cpu().numpy()
                 target = batch_y[:, -self.args.prediction_length:, :].numpy()
 
-                if test_data.scale and self.args.apply_inverse_transform:
+                if test_data.apply_scaling and self.args.apply_inverse_transform:
                     shape = outputs.shape
                     outputs = test_data.inverse_transform(outputs.reshape(-1, shape[-1])).reshape(shape)
                     target = test_data.inverse_transform(target.reshape(-1, shape[-1])).reshape(shape)
@@ -234,14 +226,16 @@ class Trainer:
                 preds.append(outputs)
                 trues.append(target)
 
-        print(f"Cost time: {np.mean(iter_times):.4f} s/iter")
         preds = np.concatenate(preds, axis=0)
         trues = np.concatenate(trues, axis=0)
-        print('test shape:', preds.shape, trues.shape)
 
         trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         mse, rmse, nrmse, mae, mape, rae, r2, corr = results_evaluation(trues.flatten(), preds.flatten())
-        print(f'mae: {mae}, r2: {r2}')
+
+        print(f"Inference speed  : {np.mean(iter_times) * 1000:.2f} ms/window")
+        print(f"Test windows     : {preds.shape[0]:,} \u00d7 {preds.shape[1]} steps \u00d7 {preds.shape[2]} targets")
+        print(f"Trainable params : {trainable_params:,}")
+        print(f"Overall          : MAE {mae:.4f}  \u2502  R\u00b2 {r2:.4f}")
 
         with open(os.path.join(self.args.checkpoint_dir, "result_long_term_forecast.txt"), 'a') as f:
             f.write(f"{run_id}\nmae:{mae}, r2:{r2}\n\n")
@@ -250,13 +244,19 @@ class Trainer:
         np.save(os.path.join(run_dir, f'pred_{tag}.npy'), preds)
         np.save(os.path.join(run_dir, f'true_{tag}.npy'), trues)
 
-        return self._evaluate_per_target(trues, preds, trainable_params, run_dir)
+        # Forecasts start lookback_window_length steps into the test split
+        # (see data_loader.py's __getitem__), so offset the dates the same
+        # way to line them up with preds/trues before plotting.
+        forecast_dates = test_data.dates[self.args.lookback_window_length:].reset_index(drop=True)
 
-    def _evaluate_per_target(self, trues, preds, trainable_params, run_dir):
+        return self._evaluate_per_target(trues, preds, trainable_params, run_dir, forecast_dates)
+
+    def _evaluate_per_target(self, trues, preds, trainable_params, run_dir, forecast_dates):
         forecast_stride = self.args.prediction_length
         n_targets = len(self.args.target_columns)
         trues = trues[::forecast_stride].reshape(-1, n_targets)
         preds = preds[::forecast_stride].reshape(-1, n_targets)
+        plot_dates = forecast_dates[:trues.shape[0]].reset_index(drop=True)
 
         columns, rows = {}, []
         for name in self.args.target_columns:
@@ -268,10 +268,9 @@ class Trainer:
             # last 7 forecast windows, for a readable snapshot
             window = self.args.prediction_length * 7
             visual(y_true[-window:], y_pred[-window:], target_name=name,
-                   save_path=os.path.join(run_dir, f'{name}.png'))
+                   dates=plot_dates[-window:].to_numpy(), save_path=os.path.join(run_dir, f'{name}.png'))
 
             mse, rmse, nrmse, mae, mape, rae, r2, corr = results_evaluation(y_true, y_pred)
-            print(f'{name} — mse:{mse}, rmse:{rmse}, mae:{mae}, r2:{r2}, corr:{corr}')
             rows.append([mse, rmse, nrmse, mae, mape, rae, r2, corr])
 
         metrics_df = pd.DataFrame(
@@ -279,7 +278,18 @@ class Trainer:
             index=self.args.target_columns)
         metrics_df.insert(0, 'trainable_params', trainable_params)
         metrics_df.loc['mean'] = metrics_df.mean()
-        print(metrics_df.loc['mean'])
+
+        # Console-only display copy: nicer headers, MAPE shown as an actual
+        # percentage. The saved CSV below keeps the raw fraction untouched.
+        display_df = metrics_df.drop(columns='trainable_params').copy()
+        display_df['mape'] = display_df['mape'] * 100
+        display_df = display_df.rename(columns={
+            'mse': 'MSE', 'rmse': 'RMSE', 'nrmse': 'NRMSE', 'mae': 'MAE',
+            'mape': 'MAPE (%)', 'rae': 'RAE', 'r2': 'R\u00b2', 'corr': 'Corr',
+        })
+        print()
+        print(display_df.to_string(float_format=lambda v: f"{v:.4f}"))
+        print()
 
         pred_df = pd.DataFrame(columns)
         tag = self.args.data_file_name[:-4]

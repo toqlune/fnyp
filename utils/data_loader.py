@@ -108,6 +108,10 @@ class ElectricityDataset(Dataset):
             self.data_y = features[start:end, -n_targets:]
 
         self.data_stamp = self._encode_time(df_eval['date'][start:end])
+        # Real calendar timestamps for this split, aligned 1:1 with data_x/
+        # data_y/data_stamp — used to label plots with actual dates rather
+        # than a raw step index.
+        self.dates = pd.to_datetime(df_eval['date'][start:end]).reset_index(drop=True)
 
         # Measured off the real data — always correct even if feature_columns
         # in config drifts from what's actually in the CSV. Total channel

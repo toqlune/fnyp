@@ -5,8 +5,10 @@ learning-rate scheduling, early stopping, and result plotting.
 import os
 import pickle
 
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 
 plt.switch_backend('agg')
@@ -34,7 +36,7 @@ def load_config(filepath):
 
 def adjust_learning_rate(optimizer, scheduler, epoch, args, printout=True, accelerator=None):
     """Applies one of several hand-tuned learning-rate decay schedules,
-    selected by args.lradj."""
+    selected by args.lr_schedule_type."""
     schedules = {
         'type1': lambda: {epoch: args.learning_rate * (0.5 ** ((epoch - 1) // 1))},
         'type2': lambda: {2: 5e-5, 4: 1e-5, 6: 5e-6, 8: 1e-6, 10: 5e-7, 15: 1e-7, 20: 5e-8},
@@ -44,10 +46,10 @@ def adjust_learning_rate(optimizer, scheduler, epoch, args, printout=True, accel
         'TST': lambda: {epoch: scheduler.get_last_lr()[0]},
         'constant': lambda: {epoch: args.learning_rate},
     }
-    if args.lradj not in schedules:
-        raise ValueError(f"Unknown lradj schedule: '{args.lradj}'")
+    if args.lr_schedule_type not in schedules:
+        raise ValueError(f"Unknown lr_schedule_type: '{args.lr_schedule_type}'")
 
-    lr_adjust = schedules[args.lradj]()
+    lr_adjust = schedules[args.lr_schedule_type]()
     if epoch not in lr_adjust:
         return
 
@@ -87,7 +89,7 @@ class EarlyStopping:
                 self._save_checkpoint(val_loss, model, path)
         else:
             self.counter += 1
-            self._log(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+            self._log(f'  \u21b3 No improvement ({self.counter}/{self.patience})')
             if self.counter >= self.patience:
                 self.early_stop = True
 
@@ -95,8 +97,7 @@ class EarlyStopping:
         # Saving is unconditional — only the log message is gated by
         # `verbose`, so the best model is never silently skipped.
         if self.verbose:
-            self._log(f'Validation loss decreased '
-                       f'({self.val_loss_min:.6f} --> {val_loss:.6f}). Saving model...')
+            self._log('  \u21b3 New best — checkpoint saved')
         torch.save(model.state_dict(), os.path.join(path, 'checkpoint'))
         self.val_loss_min = val_loss
 
@@ -124,31 +125,54 @@ plt.rcParams.update({
 })
 
 
-def visual(y_true, y_pred=None, target_name=None, save_path='./pic/test.pdf'):
+def visual(y_true, y_pred=None, target_name=None, dates=None, save_path='./pic/test.pdf'):
     """
     Plots a forecast target's ground truth against its prediction.
 
     `target_name` (e.g. 'Electricity', 'Renewable_energy', 'Coal') selects
     the ground-truth color from TARGET_COLORS, so a given variable is drawn
     in the same color across every plot the pipeline produces.
+
+    `dates`, if given, is an array-like of actual timestamps matched
+    one-to-one with y_true/y_pred: it drives the x-axis tick labels and the
+    date-range subtitle under the title. Falls back to a plain step index
+    when omitted.
     """
     true_color = TARGET_COLORS.get(target_name, DEFAULT_TRUE_COLOR)
     label = target_name.replace('_', ' ') if target_name else 'Value'
 
-    plt.figure(figsize=(10, 4))
-    plt.plot(y_true, label='Ground truth', color=true_color, linewidth=2)
-    if y_pred is not None:
-        plt.plot(y_pred, label='Prediction', color=PREDICTION_COLOR,
-                  linewidth=2, linestyle='--')
+    fig, ax = plt.subplots(figsize=(10, 4))
+    x = dates if dates is not None else np.arange(len(y_true))
 
-    plt.title(f'{label} — forecast vs. actual' if target_name else 'Forecast vs. actual')
-    plt.xlabel('Time step (hours)')
-    plt.ylabel(label)
-    plt.legend(loc='upper left')
-    plt.tight_layout()
+    ax.plot(x, y_true, label='Ground truth', color=true_color, linewidth=2)
+    if y_pred is not None:
+        ax.plot(x, y_pred, label='Prediction', color=PREDICTION_COLOR,
+                 linewidth=2, linestyle='--')
+
+    title = f'{label} — forecast vs. actual' if target_name else 'Forecast vs. actual'
+    ax.set_title(title, fontsize=13, fontweight='bold', pad=20)
+
+    if dates is not None and len(dates) > 0:
+        start, end = pd.Timestamp(dates[0]), pd.Timestamp(dates[-1])
+        date_range = f"{start:%Y-%m-%d %H:%M} \u2013 {end:%Y-%m-%d %H:%M}"
+        ax.text(0.5, 1.02, date_range, transform=ax.transAxes,
+                ha='center', va='bottom', fontsize=9.5, color='#666666')
+
+    if dates is not None:
+        locator = mdates.AutoDateLocator()
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
+        ax.set_xlabel('Date')
+        fig.autofmt_xdate()
+    else:
+        ax.set_xlabel('Time step (hours)')
+
+    ax.set_ylabel(label)
+    ax.legend(loc='upper left')
+    fig.tight_layout()
 
     directory = os.path.dirname(save_path)
     if directory and not os.path.exists(directory):
         os.makedirs(directory)
-    plt.savefig(save_path, bbox_inches='tight')
-    plt.close()
+    fig.savefig(save_path, bbox_inches='tight')
+    plt.close(fig)

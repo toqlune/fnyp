@@ -1,7 +1,7 @@
 """
 Forecast accuracy metrics for the MultiAttLLM pipeline.
 
-results_evaluation() is the single entry point exp_forecasting.py calls;
+results_evaluation() is the single entry point trainer.py calls;
 everything else here is a helper it composes.
 """
 import numpy as np
@@ -63,6 +63,7 @@ def mean_absolute_percentage_error_robust(y_true, y_pred, outlier_threshold=2.0,
     """
     MAPE with extreme percentage errors excluded, so a handful of points
     near zero (where percentage error explodes) don't dominate the metric.
+    Returned as a fraction (e.g. 0.0689), not already multiplied by 100.
     """
     y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
     percentage_error = np.abs((y_pred - y_true) / (np.abs(y_true) + eps))

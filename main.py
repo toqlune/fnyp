@@ -23,7 +23,8 @@ import torch
 
 from configs import data_config, env_config, model_config
 from engine.environment import setup_environment
-from engine.trainer import Trainer, build_run_id
+from engine.trainer import RUN_ID_CONFIG_KEYS, Trainer, build_run_id
+from utils.logging_utils import print_config_table, print_run_header
 
 
 def build_config():
@@ -50,6 +51,8 @@ def main():
     configs.save_model = parse_args().save_model
     configs.device = setup_environment(configs)
 
+    print_config_table(configs)
+
     os.makedirs('results', exist_ok=True)
 
     for run in range(configs.num_runs):
@@ -57,10 +60,10 @@ def main():
         run_id = build_run_id(configs, run)
 
         if configs.is_training_mode:
-            print(f'>>>>>>> training: {run_id} >>>>>>>')
+            print_run_header('TRAINING MODEL', configs, RUN_ID_CONFIG_KEYS)
             trainer.train(run_id)
 
-        print(f'>>>>>>> testing: {run_id} >>>>>>>')
+        print_run_header('TESTING MODEL', configs, RUN_ID_CONFIG_KEYS)
         _, metrics = trainer.test(run_id, load_checkpoint=not configs.is_training_mode)
         metrics.to_csv(os.path.join('results', f'results_{run_id}.csv'))
 

@@ -15,8 +15,8 @@ class TriangularCausalMask:
     """Upper-triangular boolean mask: True marks positions a query is not
     allowed to attend to (everything strictly after itself in the sequence)."""
 
-    def __init__(self, B, L, device="cpu"):
-        mask_shape = (B, 1, L, L)
+    def __init__(self, batch_size, seq_len, device="cpu"):
+        mask_shape = (batch_size, 1, seq_len, seq_len)
         with torch.no_grad():
             self._mask = torch.triu(torch.ones(mask_shape, dtype=torch.bool), diagonal=1).to(device)
 
