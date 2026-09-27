@@ -93,17 +93,8 @@ class LLMBlock(nn.Module):
 
         # Step 2: convert time series to patches — permute to
         # (batch, num_channels, seq_len), required by PatchEmbedding.
-        #
-        # NOTE: the .to(torch.bfloat16) below is currently a no-op as far as
-        # memory savings go — TokenEmbedding.forward() (used inside
-        # PatchEmbedding) immediately calls x.float() on its input before
-        # the Conv1d, converting straight back to float32. Left as-is
-        # pending a decision: either drop this cast as dead code, or
-        # actually thread bf16 through (would need the conv's own weights
-        # in bf16 too, plus an explicit cast back to float32 before this
-        # reaches the cross-attention/GPT-2 stack).
         x_enc = x_enc.permute(0, 2, 1).contiguous()
-        enc_out, num_channels = self.patch_embedding(x_enc.to(torch.bfloat16))
+        enc_out, num_channels = self.patch_embedding(x_enc)
         # enc_out: (batch * num_channels, num_patches, model_dimension)
 
         # Step 3: cross-attention reprogramming (paper Eq. 2-4), GLU-gated
