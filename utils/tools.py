@@ -107,7 +107,7 @@ class EarlyStopping:
 
 # ── Plotting ──────────────────────────────────────────────────────────────
 # One shared style for every plot the pipeline produces.
-PLOT_DPI = 450
+PLOT_DPI = 600                        # bumped up for higher-quality output PNGs
 PREDICTION_COLOR = '#e6550d'         # consistent accent color for predictions
 DEFAULT_TRUE_COLOR = '#333333'
 TARGET_COLORS = {                     # ground-truth color per forecast target
@@ -115,6 +115,7 @@ TARGET_COLORS = {                     # ground-truth color per forecast target
     'Renewable_energy': '#2ca02c',    # green — renewable generation
     'Coal': '#6b4226',                # brown — fossil-fuel generation
 }
+TARGET_UNIT = 'MWh'  # every current target (Electricity, Renewable_energy, Coal) is measured in this unit
 
 plt.rcParams.update({
     'figure.dpi': PLOT_DPI,
@@ -122,6 +123,7 @@ plt.rcParams.update({
     'font.size': 11,
     'axes.grid': True,
     'grid.alpha': 0.3,
+    'grid.linestyle': '--',
 })
 
 
@@ -167,8 +169,8 @@ def visual(y_true, y_pred=None, target_name=None, dates=None, save_path='./pic/t
     else:
         ax.set_xlabel('Time step (hours)')
 
-    ax.set_ylabel(label)
-    ax.legend(loc='upper left')
+    ax.set_ylabel(f'{label} ({TARGET_UNIT})')
+    ax.legend(loc='upper left', frameon=False, fontsize=9)
     fig.tight_layout()
 
     directory = os.path.dirname(save_path)

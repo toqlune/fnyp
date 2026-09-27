@@ -59,10 +59,9 @@ def _format_value(value):
     return str(value)
 
 
-def _print_two_columns(entries):
+def _print_two_columns(entries, col_width):
     """Splits entries evenly between a left and right column and prints
-    them aligned."""
-    col_width = max(len(entry) for entry in entries) + 4
+    them aligned to a shared column width."""
     half = (len(entries) + 1) // 2
     left_col, right_col = entries[:half], entries[half:]
 
@@ -101,6 +100,16 @@ def print_config_table(configs, groups=None, exclude=()):
     ordered_groups = [g for g in _GROUP_ORDER if g in by_group]
     ordered_groups += [g for g in by_group if g not in ordered_groups]
 
+    # One shared column width for the whole table (not recomputed per
+    # group), so every section lines up the same way regardless of how
+    # long its longest entry happens to be.
+    all_entries = [
+        f"{key}: {value}"
+        for group in ordered_groups
+        for key, value in sorted(by_group[group])
+    ]
+    col_width = max(len(entry) for entry in all_entries) + 4
+
     print_section("CONFIGS")
 
     for i, group in enumerate(ordered_groups):
@@ -108,7 +117,7 @@ def print_config_table(configs, groups=None, exclude=()):
         entries = [f"{key}: {value}" for key, value in items]
 
         _print_group_header(group)
-        _print_two_columns(entries)
+        _print_two_columns(entries, col_width)
 
         if i != len(ordered_groups) - 1:
             print()
