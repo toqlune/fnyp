@@ -1,7 +1,11 @@
 # Core deep learning framework.
 # Install the build matching your CUDA version per https://pytorch.org/get-started/locally/
 # if the default PyPI wheel doesn't pick up your GPU correctly.
-torch>=2.0.0
+# >=2.3.0 required for the torch.amp.GradScaler('cuda') API used in
+# engine/trainer.py when use_mixed_precision is enabled (env_config.py) —
+# on torch<2.3 this raises AttributeError: module 'torch.amp' has no
+# attribute 'GradScaler'.
+torch>=2.3.0
 
 # Frozen GPT-2 backbone (downloaded from Hugging Face at runtime).
 transformers>=4.30.0
