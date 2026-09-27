@@ -5,6 +5,25 @@ someone without a deep learning background.
 """
 from shutil import get_terminal_size
 
+# ANSI bold — renders as real bold text in Jupyter/Colab/most terminals.
+# A plain terminal or a log file that doesn't interpret ANSI will instead
+# show the raw escape codes around the group name; swap _BOLD/_RESET for
+# empty strings if that happens in your environment.
+_BOLD = '\033[1m'
+_RESET = '\033[0m'
+
+# Config keys added dynamically outside the three config modules (by
+# main.py / engine/trainer.py) don't carry group information the way
+# module-sourced keys do, so they're assigned a group here explicitly.
+# Anything not covered by either falls into an "Other" catch-all.
+_DYNAMIC_KEY_GROUPS = {
+    'device': 'Environment',
+    'save_model': 'Environment',
+    'num_input_channels': 'Data',
+    'num_target_channels': 'Data',
+}
+_GROUP_ORDER = ['Data', 'Model', 'Environment', 'Other']
+
 
 def _rule(title, width=None):
     width = width or min(get_terminal_size((100, 20)).columns, 100)
@@ -40,24 +59,59 @@ def _format_value(value):
     return str(value)
 
 
-def print_config_table(configs, exclude=()):
-    """Prints every attribute on `configs` as a clean two-column table,
-    sorted alphabetically. `exclude` skips attributes not worth showing."""
-    items = sorted(
-        (key, _format_value(value)) for key, value in vars(configs).items()
-        if not key.startswith('_') and key not in exclude
-    )
-    entries = [f"{key}: {value}" for key, value in items]
-    if not entries:
-        return
-
+def _print_two_columns(entries):
+    """Splits entries evenly between a left and right column and prints
+    them aligned."""
     col_width = max(len(entry) for entry in entries) + 4
     half = (len(entries) + 1) // 2
     left_col, right_col = entries[:half], entries[half:]
 
-    print_section("CONFIGS")
     for i in range(half):
         left = left_col[i]
         right = right_col[i] if i < len(right_col) else ''
         print(f"{left.ljust(col_width)}{right}")
+
+
+def _print_group_header(title):
+    underline = '.' * max(len(title), 8)
+    print(f"{_BOLD}{title}{_RESET}")
+    print(underline)
+    print()
+
+
+def print_config_table(configs, groups=None, exclude=()):
+    """Prints every attribute on `configs` as a clean two-column table,
+    grouped into subsections (Data / Model / Environment / Other) with a
+    bolded, underlined subsection heading. `groups` maps each key to its
+    section name (see main.py:build_config); keys missing from it fall
+    back to _DYNAMIC_KEY_GROUPS, then to "Other". `exclude` skips
+    attributes not worth showing."""
+    groups = groups or {}
+
+    by_group = {}
+    for key, value in vars(configs).items():
+        if key.startswith('_') or key in exclude:
+            continue
+        group = groups.get(key) or _DYNAMIC_KEY_GROUPS.get(key) or 'Other'
+        by_group.setdefault(group, []).append((key, _format_value(value)))
+
+    if not by_group:
+        return
+
+    ordered_groups = [g for g in _GROUP_ORDER if g in by_group]
+    ordered_groups += [g for g in by_group if g not in ordered_groups]
+
+    print_section("CONFIGS")
+
+    for i, group in enumerate(ordered_groups):
+        items = sorted(by_group[group])
+        entries = [f"{key}: {value}" for key, value in items]
+
+        _print_group_header(group)
+        _print_two_columns(entries)
+
+        if i != len(ordered_groups) - 1:
+            print()
+            print()
+
     print()

@@ -28,12 +28,17 @@ from utils.logging_utils import print_config_table, print_run_header
 
 
 def build_config():
-    """Merges the three config modules into one namespace."""
+    """Merges the three config modules into one namespace, remembering
+    which module each attribute came from so it can be displayed grouped
+    by section (see utils/logging_utils.py:print_config_table)."""
     configs = SimpleNamespace()
-    for module in (data_config, model_config, env_config):
+    config_groups = {}
+    for group_name, module in (('Data', data_config), ('Model', model_config), ('Environment', env_config)):
         for key, value in vars(module).items():
             if not key.startswith('_'):
                 setattr(configs, key, value)
+                config_groups[key] = group_name
+    configs._config_groups = config_groups
     return configs
 
 
@@ -51,7 +56,7 @@ def main():
     configs.save_model = parse_args().save_model
     configs.device = setup_environment(configs)
 
-    print_config_table(configs)
+    print_config_table(configs, groups=configs._config_groups)
 
     os.makedirs('results', exist_ok=True)
 
