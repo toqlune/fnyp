@@ -19,7 +19,7 @@ num_decoder_layers = 4    # CI decoder layer stack depth (renamed from `d_layers
 num_llm_layers = 6        # transformer blocks used from GPT-2 (of 12 available)
 
 # ── Improved-architecture addition (M2: text prototypes) ──────────────────
-num_text_prototypes = 64
+num_text_prototypes = 512
 
 # ── Sequence patching (LLM encoder input) ─────────────────────────────────
 patch_length = 16
