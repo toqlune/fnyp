@@ -170,7 +170,8 @@ def visual(y_true, y_pred=None, target_name=None, dates=None, save_path='./pic/t
         ax.set_xlabel('Time step (hours)')
 
     ax.set_ylabel(f'{label} ({TARGET_UNIT})')
-    ax.legend(loc='upper left', frameon=False, fontsize=9)
+    ax.legend(loc='upper left', fontsize=9, frameon=True, facecolor='white',
+              framealpha=1.0, edgecolor='none', shadow=False)
     fig.tight_layout()
 
     directory = os.path.dirname(save_path)
