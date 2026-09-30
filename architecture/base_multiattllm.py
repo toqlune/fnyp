@@ -10,10 +10,13 @@ Same pipeline as the improved model:
 
 What is turned off, relative to the improved model:
 
-  M1  RevIN                  no instance normalization anywhere; the targets
-                             are only globally Z-scored by the data loader
-                             (paper Sec. 3.2), and the prediction is
-                             inverse-transformed at evaluation time.
+  M1  RevIN                  RevIN(affine=False): the same per-instance
+                             normalize/denormalize step as the improved
+                             model, but with no learnable scale/shift — a
+                             plain z-score per window, matching the
+                             non-learnable Normalize layer used at this
+                             exact spot in the earlier reference
+                             implementation this was rebuilt from.
   M2  Text-prototype bank    LLMBlock(use_word_projection=True): GPT-2's
       + GLU gate             vocabulary embedding matrix is projected down to
                              `word_projection_size` word vectors (paper ①,
@@ -41,6 +44,7 @@ from modules.attention import AttentionLayer, FullAttention
 from modules.decoder import Decoder, DecoderLayer
 from modules.embed import DataEmbedding
 from modules.llm_block import LLMBlock
+from modules.revin import RevIN
 
 
 class BaseModel(nn.Module):
@@ -56,9 +60,13 @@ class BaseModel(nn.Module):
         # Same single linear layer as the improved model.
         self.feature_extractor = nn.Linear(num_covariates, configs.model_dimension)
 
+        # ── RevIN, no learnable affine (M1 off) ────────────────────────────
+        # Still normalizes/denormalizes the target series per instance —
+        # just without the learnable scale/shift the improved model adds.
+        self.revin_layer = RevIN(self.num_target_channels, affine=False)
+
         # ── LLM encoder (paper ①②③), base mode ─────────────────────────────
-        # Word projection + plain cross-attention + frozen GPT-2. No RevIN
-        # around it (M1 off).
+        # Word projection + plain cross-attention + frozen GPT-2.
         self.llm_encoder = LLMBlock(configs, use_word_projection=True)
 
         # ── Fusion decoder (channel-dependent: M3 off) ─────────────────────
@@ -100,6 +108,10 @@ class BaseModel(nn.Module):
         x_enc_other = x_enc[:, :, :-self.num_target_channels]
         x_enc_target = x_enc[:, :, -self.num_target_channels:]
 
+        # normalize target series per-instance (no learnable affine, M1
+        # off); caches stats for the denorm step at the end of this method
+        x_enc_target = self.revin_layer(x_enc_target, 'norm')
+
         # Path A: target features through the frozen-LLM encoder
         enc_out_target = self.llm_encoder(x_enc_target)
         # (batch, prediction_length + label_sequence_length, num_target_channels)
@@ -111,8 +123,9 @@ class BaseModel(nn.Module):
         # decoder input is the LLM output with every channel embedded together
         dec_in = self.dec_embedding(enc_out_target, x_mark_dec)
         dec_out = self.fusion_decoder(dec_in, enc_out_other, x_mask=None, cross_mask=None)
-        return self.output_projection(dec_out)
+        dec_out = self.output_projection(dec_out)
         # (batch, prediction_length + label_sequence_length, num_target_channels)
+        return self.revin_layer(dec_out, 'denorm')
 
     def forward(self, x_enc, x_mark_dec):
         dec_out = self.forecast(x_enc, x_mark_dec)

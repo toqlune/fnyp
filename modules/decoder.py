@@ -9,6 +9,10 @@ encoding). The two branches are combined via (M4) Adaptive Gated Fusion
 (see modules.adaptive_gated_fusion.AdaptiveGatedFusion) — a learned gate
 that decides how much of the covariate signal to blend in, rather than a
 fixed additive residual — right before that step's Add & Norm.
+
+`use_adaptive_gated_fusion=False` drops the gate and falls back to the
+original plain residual around cross-attention (x + cross_attention_out),
+which is what the base model uses.
 """
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,16 +22,18 @@ from modules.adaptive_gated_fusion import AdaptiveGatedFusion
 
 class DecoderLayer(nn.Module):
 
-    def __init__(self, self_attention, cross_attention, d_model, d_ff=None, dropout=0.1, activation="relu"):
+    def __init__(self, self_attention, cross_attention, d_model, d_ff=None, dropout=0.1, activation="relu",
+                 use_adaptive_gated_fusion=True):
         super().__init__()
         d_ff = d_ff or 4 * d_model
         self.self_attention = self_attention
         self.cross_attention = cross_attention
-        self.adaptive_gated_fusion = AdaptiveGatedFusion(d_model)  # (M4)
+        # (M4) gate; None keeps the original plain residual (base model)
+        self.adaptive_gated_fusion = AdaptiveGatedFusion(d_model) if use_adaptive_gated_fusion else None
         self.conv1 = nn.Conv1d(in_channels=d_model, out_channels=d_ff, kernel_size=1)
         self.conv2 = nn.Conv1d(in_channels=d_ff, out_channels=d_model, kernel_size=1)
         self.norm1 = nn.LayerNorm(d_model)  # after the self-attention residual
-        self.norm2 = nn.LayerNorm(d_model)  # after the M4 gated-fusion residual
+        self.norm2 = nn.LayerNorm(d_model)  # after the M4 gated fusion (or the plain residual)
         self.norm3 = nn.LayerNorm(d_model)  # after the feed-forward residual
         self.dropout = nn.Dropout(dropout)
         self.activation = F.relu if activation == "relu" else F.gelu
@@ -41,10 +47,14 @@ class DecoderLayer(nn.Module):
         cross_attention_out = self.dropout(
             self.cross_attention(x, cross, cross, attn_mask=cross_mask, tau=tau, delta=delta)[0])
 
-        # (M4) Adaptive Gated Fusion: blend the self-attended representation
-        # with the cross-attention (covariate) branch via a learned gate,
-        # instead of a plain additive residual
-        x = self.norm2(self.adaptive_gated_fusion(x, cross_attention_out))
+        if self.adaptive_gated_fusion is not None:
+            # (M4) Adaptive Gated Fusion: blend the self-attended representation
+            # with the cross-attention (covariate) branch via a learned gate,
+            # instead of a plain additive residual
+            x = self.norm2(self.adaptive_gated_fusion(x, cross_attention_out))
+        else:
+            # base model: plain additive residual around cross-attention
+            x = self.norm2(x + cross_attention_out)
 
         y = x
         y = self.dropout(self.activation(self.conv1(y.transpose(-1, 1))))

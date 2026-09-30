@@ -19,7 +19,19 @@ num_decoder_layers = 4    # CI decoder layer stack depth (renamed from `d_layers
 num_llm_layers = 6        # transformer blocks used from GPT-2 (of 12 available)
 
 # ── Improved-architecture addition (M2: text prototypes) ──────────────────
-num_text_prototypes = 512
+# Overridable from the command line with --num-text-proto / -ntp. Unused in
+# base mode (see below).
+num_text_prototypes = 64
+
+# ── Base model (paper's original architecture, without M1–M4) ─────────────
+# `python main.py --base-model` (or -bm) flips use_base_model to True.
+# In base mode the LLM branch has no learned prototype bank: it linearly
+# projects GPT-2's whole vocabulary embedding matrix down to
+# `word_projection_size` word vectors (paper ①, Eq. 1) and attends to those.
+use_base_model = False
+word_projection_size = 2000   # paper's d_wproj. NOTE: the earlier standalone
+                              # implementation used 3000 — change it here if
+                              # you want that variant instead.
 
 # ── Sequence patching (LLM encoder input) ─────────────────────────────────
 patch_length = 16

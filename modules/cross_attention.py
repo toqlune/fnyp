@@ -4,12 +4,15 @@ attend over a learned text-prototype bank (see llm_block.py) instead of a
 projected vocabulary.
 
 Queries come from the time-series patches (d_model).
-Keys/Values come from the text-prototype bank (d_llm).
+Keys/Values come from the source embeddings (d_llm): the text-prototype
+bank in the improved model, the projected vocabulary in the base model.
 
 A GLU gate sits right after the multi-head attention output: it projects
 to twice the width, then GLU(dim=-1) splits that in half and computes
 a * sigmoid(b), letting the network learn to suppress noisy cross-attention
-output before it reaches the frozen LLM.
+output before it reaches the frozen LLM. The gate is part of the improved
+model (M2); `use_gate=False` removes it, giving the paper's original
+cross-attention (Eqs. 2-4), which the base model uses.
 
 NOTE: llm_block.py constructs this with d_keys=feedforward_dimension
 (rather than leaving it at the usual d_model // n_heads default), so the
@@ -25,7 +28,7 @@ import torch.nn as nn
 
 class CrossAttentionLayer(nn.Module):
 
-    def __init__(self, d_model, n_heads, d_keys=None, d_llm=None, attention_dropout=0.1):
+    def __init__(self, d_model, n_heads, d_keys=None, d_llm=None, attention_dropout=0.1, use_gate=True):
         super().__init__()
         d_keys = d_keys or (d_model // n_heads)
 
@@ -36,16 +39,17 @@ class CrossAttentionLayer(nn.Module):
         self.n_heads = n_heads
         self.dropout = nn.Dropout(attention_dropout)
 
-        # (d_keys*n_heads) -> (2 * d_keys*n_heads) -> GLU -> (d_keys*n_heads)
+        # (d_keys*n_heads) -> (2 * d_keys*n_heads) -> GLU -> (d_keys*n_heads).
+        # Not created at all when use_gate=False (base model).
         self.glu = nn.Sequential(
             nn.Linear(d_keys * n_heads, 2 * d_keys * n_heads),
             nn.GLU(dim=-1),
-        )
+        ) if use_gate else None
 
     def forward(self, target_embedding, source_embedding, value_embedding):
         # target_embedding: (batch, num_patches, d_model)  — time-series patches
-        # source_embedding: (num_prototypes, d_llm)         — prototype keys
-        # value_embedding:  (num_prototypes, d_llm)         — prototype values
+        # source_embedding: (num_sources, d_llm)           — keys   (prototypes or projected words)
+        # value_embedding:  (num_sources, d_llm)           — values (same)
         batch_size, num_patches, _ = target_embedding.shape
         num_prototypes, _ = source_embedding.shape
         num_heads = self.n_heads
@@ -56,7 +60,8 @@ class CrossAttentionLayer(nn.Module):
 
         out = self._reprogram(target_embedding, source_embedding, value_embedding)
         out = out.reshape(batch_size, num_patches, -1)
-        out = self.glu(out)  # gated bottleneck before the frozen LLM sees it
+        if self.glu is not None:
+            out = self.glu(out)  # gated bottleneck before the frozen LLM sees it
         return self.out_projection(out)
 
     def _reprogram(self, target_embedding, source_embedding, value_embedding):

@@ -15,6 +15,7 @@ import torch.nn as nn
 from torch import optim
 from torch.optim import lr_scheduler
 
+from architecture.base_multiattllm import BaseModel
 from architecture.multiattllm import Model
 from utils.data_loader import get_dataloader
 from utils.metrics import results_evaluation
@@ -22,16 +23,25 @@ from utils.tools import EarlyStopping, adjust_learning_rate, save_config, visual
 
 warnings.filterwarnings('ignore')
 
-# Config fields embedded in every generated run identifier (saved-model
-# filenames, results filenames, working checkpoint folder, and the
-# TRAINING/TESTING console headers). Keep this short and intentional —
-# include only whatever actually varies between your experiment runs, not
-# every hyperparameter.
-RUN_ID_CONFIG_KEYS = ['num_text_prototypes']
+
+def run_id_config_keys(configs):
+    """Config fields embedded in every generated run identifier
+    (saved-model filenames, results filenames, working checkpoint folder,
+    and the TRAINING/TESTING console headers). Keep this short and
+    intentional — include only whatever actually varies between your
+    experiment runs, not every hyperparameter.
+
+    Base mode has no text-prototype bank (it uses word projection instead),
+    so the key shown switches automatically with configs.use_base_model —
+    otherwise a base-mode run would tag itself with a config it doesn't use.
+    """
+    if configs.use_base_model:
+        return ['word_projection_size']
+    return ['num_text_prototypes']
 
 
 def _config_slug(configs):
-    parts = [f"{key.replace('_', '-')}-{getattr(configs, key)}" for key in RUN_ID_CONFIG_KEYS]
+    parts = [f"{key.replace('_', '-')}-{getattr(configs, key)}" for key in run_id_config_keys(configs)]
     return '_'.join(parts)
 
 
@@ -64,7 +74,8 @@ class Trainer:
         configs.num_input_channels = self._train_data.num_input_channels
         configs.num_target_channels = len(configs.target_columns)
 
-        self.model = Model(configs).float().to(self.device)
+        model_class = BaseModel if configs.use_base_model else Model
+        self.model = model_class(configs).float().to(self.device)
 
     def _get_data(self, flag):
         if flag == 'train':
