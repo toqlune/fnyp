@@ -10,13 +10,15 @@ Same pipeline as the improved model:
 
 What is turned off, relative to the improved model:
 
-  M1  RevIN                  RevIN(affine=False): the same per-instance
-                             normalize/denormalize step as the improved
-                             model, but with no learnable scale/shift — a
-                             plain z-score per window, matching the
-                             non-learnable Normalize layer used at this
-                             exact spot in the earlier reference
-                             implementation this was rebuilt from.
+  M1  RevIN                  No RevIN layer at all. Target features are used
+                             exactly as the dataloader hands them over — scaled
+                             once, globally, by the StandardScaler fit on the
+                             training split (data/dataloader.py), with no
+                             further per-window normalization applied inside
+                             the model. This matches the paper's original
+                             design, which standardises inputs with a single
+                             Z-score statistic computed once from the training
+                             set and applies it unchanged thereafter.
   M2  Text-prototype bank    LLMBlock(use_word_projection=True): GPT-2's
       + GLU gate             vocabulary embedding matrix is projected down to
                              `word_projection_size` word vectors (paper ①,
@@ -44,7 +46,6 @@ from modules.attention import AttentionLayer, FullAttention
 from modules.decoder import Decoder, DecoderLayer
 from modules.embed import DataEmbedding
 from modules.llm_block import LLMBlock
-from modules.revin import RevIN
 
 
 class BaseModel(nn.Module):
@@ -59,11 +60,6 @@ class BaseModel(nn.Module):
         # ── Covariate feature extractor (paper ④) ─────────────────────────
         # Same single linear layer as the improved model.
         self.feature_extractor = nn.Linear(num_covariates, configs.model_dimension)
-
-        # ── RevIN, no learnable affine (M1 off) ────────────────────────────
-        # Still normalizes/denormalizes the target series per instance —
-        # just without the learnable scale/shift the improved model adds.
-        self.revin_layer = RevIN(self.num_target_channels, affine=False)
 
         # ── LLM encoder (paper ①②③), base mode ─────────────────────────────
         # Word projection + plain cross-attention + frozen GPT-2.
@@ -108,9 +104,8 @@ class BaseModel(nn.Module):
         x_enc_other = x_enc[:, :, :-self.num_target_channels]
         x_enc_target = x_enc[:, :, -self.num_target_channels:]
 
-        # normalize target series per-instance (no learnable affine, M1
-        # off); caches stats for the denorm step at the end of this method
-        x_enc_target = self.revin_layer(x_enc_target, 'norm')
+        # No per-window renormalization (M1 off) — x_enc_target is used as-is,
+        # already globally Z-scored by the dataloader.
 
         # Path A: target features through the frozen-LLM encoder
         enc_out_target = self.llm_encoder(x_enc_target)
@@ -125,7 +120,9 @@ class BaseModel(nn.Module):
         dec_out = self.fusion_decoder(dec_in, enc_out_other, x_mask=None, cross_mask=None)
         dec_out = self.output_projection(dec_out)
         # (batch, prediction_length + label_sequence_length, num_target_channels)
-        return self.revin_layer(dec_out, 'denorm')
+        # Output stays in the globally-scaled space; dataset.inverse_transform
+        # handles conversion back to physical units at evaluation time.
+        return dec_out
 
     def forward(self, x_enc, x_mark_dec):
         dec_out = self.forecast(x_enc, x_mark_dec)
